@@ -8,7 +8,7 @@
 # Usage:
 #   1. cp .env.librechat.example .env.librechat
 #   2. Fill in your values in .env.librechat
-#   3. docker compose -f docker-compose.librechat.yml up -d
+#   3. docker compose -f docker-compose.librechat.yml --env-file .env.librechat up -d
 #
 # Health checks:  curl http://localhost:8001/healthz
 #                 curl http://localhost:8002/healthz
@@ -55,7 +55,7 @@ services:
 
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -85,7 +85,7 @@ services:
 
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 30s
       timeout: 5s
       retries: 3
