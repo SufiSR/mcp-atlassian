@@ -30,6 +30,7 @@ MANIFEST
 .env
 .env.*
 !tests/e2e/docker/.env.example
+!.env.librechat.example
 .venv
 env/
 venv/

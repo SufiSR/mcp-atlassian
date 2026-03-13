@@ -1,0 +1,99 @@
+# docker-compose.librechat.yml
+#
+# Runs two independent mcp-atlassian instances for LibreChat integration.
+# Each instance is pre-configured for one Atlassian Cloud environment via
+# environment variables; per-user credentials are injected at request time
+# through X-Atlassian-Email / X-Atlassian-Token headers by LibreChat.
+#
+# Usage:
+#   1. cp .env.librechat.example .env.librechat
+#   2. Fill in your values in .env.librechat
+#   3. docker compose -f docker-compose.librechat.yml up -d
+#
+# Health checks:  curl http://localhost:8001/healthz
+#                 curl http://localhost:8002/healthz
+#
+# See docs/readme_cloud_apikey.md for the full setup guide.
+
+services:
+
+  # ── Atlassian Environment 1 ──────────────────────────────────────────────────
+  mcp-atlassian-env1:
+    # Build from this fork — required because it contains the X-Atlassian-Email /
+    # X-Atlassian-Token header extension that the upstream image does not include.
+    build: .
+    image: mcp-atlassian:local
+    # Once a Docker image is published for this fork you can switch to:
+    # image: ghcr.io/sufiasr/mcp-atlassian:latest
+    ports:
+      - "8001:8000"
+    environment:
+      # Transport — must be streamable-http for LibreChat
+      TRANSPORT: streamable-http
+      PORT: "8000"
+      HOST: "0.0.0.0"
+
+      # Atlassian instance URLs for this environment (required)
+      JIRA_URL: "${JIRA_URL_ENV1}"
+      CONFLUENCE_URL: "${CONFLUENCE_URL_ENV1}"
+
+      # Optional service-account credentials used as a global fallback.
+      # Per-user X-Atlassian-Email/Token headers always take precedence.
+      # Remove these if you want to enforce per-user auth exclusively.
+      JIRA_USERNAME: "${JIRA_SERVICE_ACCOUNT_EMAIL_ENV1:-}"
+      JIRA_API_TOKEN: "${JIRA_SERVICE_ACCOUNT_TOKEN_ENV1:-}"
+      CONFLUENCE_USERNAME: "${CONFLUENCE_SERVICE_ACCOUNT_EMAIL_ENV1:-}"
+      CONFLUENCE_API_TOKEN: "${CONFLUENCE_SERVICE_ACCOUNT_TOKEN_ENV1:-}"
+
+      # Logging — set to MCP_VERBOSE=true for INFO, MCP_VERY_VERBOSE=true for DEBUG
+      MCP_VERBOSE: "${MCP_VERBOSE:-false}"
+      MCP_VERY_VERBOSE: "${MCP_VERY_VERBOSE:-false}"
+
+      # Optional: restrict which tools are available
+      # TOOLSETS: "default"
+      # READ_ONLY_MODE: "false"
+
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Atlassian Environment 2 ──────────────────────────────────────────────────
+  mcp-atlassian-env2:
+    build: .
+    image: mcp-atlassian:local
+    ports:
+      - "8002:8000"
+    environment:
+      TRANSPORT: streamable-http
+      PORT: "8000"
+      HOST: "0.0.0.0"
+
+      JIRA_URL: "${JIRA_URL_ENV2}"
+      CONFLUENCE_URL: "${CONFLUENCE_URL_ENV2}"
+
+      JIRA_USERNAME: "${JIRA_SERVICE_ACCOUNT_EMAIL_ENV2:-}"
+      JIRA_API_TOKEN: "${JIRA_SERVICE_ACCOUNT_TOKEN_ENV2:-}"
+      CONFLUENCE_USERNAME: "${CONFLUENCE_SERVICE_ACCOUNT_EMAIL_ENV2:-}"
+      CONFLUENCE_API_TOKEN: "${CONFLUENCE_SERVICE_ACCOUNT_TOKEN_ENV2:-}"
+
+      MCP_VERBOSE: "${MCP_VERBOSE:-false}"
+      MCP_VERY_VERBOSE: "${MCP_VERY_VERBOSE:-false}"
+
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Optional: attach both containers to an existing LibreChat Docker network.
+# Uncomment and replace 'librechat_default' with your actual network name.
+# networks:
+#   default:
+#     external: true
+#     name: librechat_default

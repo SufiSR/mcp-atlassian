@@ -521,6 +521,19 @@ class UserTokenMiddleware:
                 else None
             )
 
+            # --- Extension: LibreChat Cloud basic-auth headers ---
+            # Allows clients (e.g. LibreChat) to pass email and API token as two
+            # separate plaintext headers instead of a pre-encoded Authorization:
+            # Basic value.  The dependency layer (Branch 2 in _get_fetcher) already
+            # handles these state fields — only the extraction point is new here.
+            #
+            # To remove this extension once upstream adds native support, delete the
+            # two lines below and remove the ``elif`` branch near the bottom of this
+            # method that calls ``_parse_email_token_headers``.
+            _ext_email_header = headers.get(b"x-atlassian-email")
+            _ext_token_header = headers.get(b"x-atlassian-token")
+            # --- End extension ---
+
             # Validate URLs to prevent SSRF
             if jira_url_str:
                 ssrf_error = validate_url_for_ssrf(jira_url_str)
@@ -593,6 +606,15 @@ class UserTokenMiddleware:
                     logger.debug(
                         "UserTokenMiddleware: Header-based authentication detected. Setting PAT auth type."
                     )
+                # --- Extension: LibreChat Cloud basic-auth headers ---
+                # Use `is not None` so that an empty header value (b"") still
+                # reaches _parse_email_token_headers and triggers a 401 rather
+                # than silently falling through to the global service account.
+                elif _ext_email_header is not None and _ext_token_header is not None:
+                    self._parse_email_token_headers(
+                        _ext_email_header, _ext_token_header, scope
+                    )
+                # --- End extension ---
 
         except Exception as e:
             logger.error(f"Error processing authentication headers: {e}", exc_info=True)
@@ -679,6 +701,53 @@ class UserTokenMiddleware:
             scope["state"]["auth_validation_error"] = (
                 "Unauthorized: Empty Authorization header"
             )
+
+    # --- Extension: LibreChat Cloud basic-auth headers ---
+    def _parse_email_token_headers(
+        self,
+        email_header: bytes,
+        token_header: bytes,
+        scope: Scope,
+    ) -> None:
+        """Extract basic-auth credentials from separate X-Atlassian-Email/Token headers.
+
+        This is an extension to support LibreChat's ``customUserVars`` pattern, where
+        the client provides email and API token as two individual plaintext headers
+        rather than a pre-encoded ``Authorization: Basic`` value.
+
+        The resulting state fields are identical to those set by the
+        ``Authorization: Basic`` branch in :meth:`_parse_auth_header`, so the
+        existing ``Branch 2`` logic in ``_get_fetcher`` (``dependencies.py``) picks
+        them up without any further changes.
+
+        Args:
+            email_header: Raw bytes value of the ``X-Atlassian-Email`` header.
+            token_header: Raw bytes value of the ``X-Atlassian-Token`` header.
+            scope: ASGI scope dict whose ``state`` will be mutated.
+        """
+        email = email_header.decode("latin-1").strip()
+        api_token = token_header.decode("latin-1").strip()
+
+        if not email:
+            scope["state"]["auth_validation_error"] = (
+                "Unauthorized: X-Atlassian-Email header is empty"
+            )
+            return
+        if not api_token:
+            scope["state"]["auth_validation_error"] = (
+                "Unauthorized: X-Atlassian-Token header is empty"
+            )
+            return
+
+        scope["state"]["user_atlassian_email"] = email
+        scope["state"]["user_atlassian_api_token"] = api_token
+        scope["state"]["user_atlassian_auth_type"] = "basic"
+        scope["state"]["user_atlassian_token"] = None
+        logger.debug(
+            f"UserTokenMiddleware: X-Atlassian-Email/Token headers extracted for email: {email}"
+        )
+
+    # --- End extension ---
 
 
 def _get_allowed_redirect_uris() -> list[str] | None:

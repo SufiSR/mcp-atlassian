@@ -526,6 +526,107 @@ class TestUserTokenMiddleware:
         assert start_call["status"] == 401
         middleware.app.assert_not_called()
 
+    # --- Extension: LibreChat Cloud basic-auth header tests ---
+
+    @pytest.mark.anyio
+    async def test_email_token_headers_extraction_success(
+        self, middleware, mock_scope, mock_receive, mock_send
+    ):
+        """Test successful extraction of X-Atlassian-Email + X-Atlassian-Token headers."""
+        mock_scope["headers"] = [
+            (b"x-atlassian-email", b"user@example.com"),
+            (b"x-atlassian-token", b"my-api-token-123"),
+        ]
+
+        await middleware(mock_scope, mock_receive, mock_send)
+
+        middleware.app.assert_called_once()
+        mock_send.assert_not_called()
+
+        passed_scope = middleware.app.call_args[0][0]
+        assert passed_scope["state"]["user_atlassian_auth_type"] == "basic"
+        assert passed_scope["state"]["user_atlassian_email"] == "user@example.com"
+        assert passed_scope["state"]["user_atlassian_api_token"] == "my-api-token-123"
+        assert passed_scope["state"]["user_atlassian_token"] is None
+
+    @pytest.mark.anyio
+    async def test_email_token_headers_empty_email_returns_401(
+        self, middleware, mock_scope, mock_receive, mock_send
+    ):
+        """Test that an empty X-Atlassian-Email header returns 401."""
+        mock_scope["headers"] = [
+            (b"x-atlassian-email", b"   "),
+            (b"x-atlassian-token", b"my-api-token-123"),
+        ]
+
+        await middleware(mock_scope, mock_receive, mock_send)
+
+        assert mock_send.call_count == 2
+        start_call = mock_send.call_args_list[0][0][0]
+        assert start_call["status"] == 401
+        body = json.loads(mock_send.call_args_list[1][0][0]["body"].decode())
+        assert "X-Atlassian-Email" in body["error"]
+        middleware.app.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_email_token_headers_empty_token_returns_401(
+        self, middleware, mock_scope, mock_receive, mock_send
+    ):
+        """Test that an empty X-Atlassian-Token header returns 401."""
+        mock_scope["headers"] = [
+            (b"x-atlassian-email", b"user@example.com"),
+            (b"x-atlassian-token", b""),
+        ]
+
+        await middleware(mock_scope, mock_receive, mock_send)
+
+        assert mock_send.call_count == 2
+        start_call = mock_send.call_args_list[0][0][0]
+        assert start_call["status"] == 401
+        body = json.loads(mock_send.call_args_list[1][0][0]["body"].decode())
+        assert "X-Atlassian-Token" in body["error"]
+        middleware.app.assert_not_called()
+
+    @pytest.mark.anyio
+    async def test_email_token_headers_only_email_no_token_ignored(
+        self, middleware, mock_scope, mock_receive, mock_send
+    ):
+        """Test that X-Atlassian-Email alone (no Token header) is not processed."""
+        mock_scope["headers"] = [
+            (b"x-atlassian-email", b"user@example.com"),
+        ]
+
+        await middleware(mock_scope, mock_receive, mock_send)
+
+        # No auth error, no auth type set — falls through to global fallback
+        middleware.app.assert_called_once()
+        passed_scope = middleware.app.call_args[0][0]
+        assert passed_scope["state"].get("user_atlassian_auth_type") is None
+
+    @pytest.mark.anyio
+    async def test_authorization_header_takes_precedence_over_email_token(
+        self, middleware, mock_scope, mock_receive, mock_send
+    ):
+        """Test that Authorization: Basic takes precedence over X-Atlassian-Email/Token."""
+        import base64
+
+        credentials = base64.b64encode(b"override@example.com:override-token").decode()
+        mock_scope["headers"] = [
+            (b"authorization", f"Basic {credentials}".encode()),
+            (b"x-atlassian-email", b"should-be-ignored@example.com"),
+            (b"x-atlassian-token", b"ignored-token"),
+        ]
+
+        await middleware(mock_scope, mock_receive, mock_send)
+
+        middleware.app.assert_called_once()
+        passed_scope = middleware.app.call_args[0][0]
+        assert passed_scope["state"]["user_atlassian_auth_type"] == "basic"
+        assert passed_scope["state"]["user_atlassian_email"] == "override@example.com"
+        assert passed_scope["state"]["user_atlassian_api_token"] == "override-token"
+
+    # --- End extension ---
+
     def test_should_process_auth_uses_runtime_streamable_path(self):
         mock_app = AsyncMock()
         mock_mcp_server = MagicMock()
