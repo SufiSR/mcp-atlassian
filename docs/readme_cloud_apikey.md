@@ -152,10 +152,10 @@ mcpServers:
   # ── Atlassian Environment 1 ────────────────────────────────────────────────
   atlassian-env1:
     type: streamable-http
-    # Same Docker network:
-    url: "http://mcp-atlassian-env1:8000/mcp"
-    # Different host / exposed port:
-    # url: "http://<host-ip>:8001/mcp"
+    # Exposed port (default — containers not in the same Docker network as LibreChat):
+    url: "http://<host-ip>:8001/mcp"
+    # Same Docker network (uncomment if LibreChat and mcp-atlassian share a network):
+    # url: "http://mcp-atlassian-env1:8000/mcp"
     headers:
       X-Atlassian-Email: "{{ATLASSIAN_ENV1_EMAIL}}"
       X-Atlassian-Token: "{{ATLASSIAN_ENV1_TOKEN}}"
@@ -173,8 +173,8 @@ mcpServers:
   # ── Atlassian Environment 2 ────────────────────────────────────────────────
   atlassian-env2:
     type: streamable-http
-    url: "http://mcp-atlassian-env2:8000/mcp"
-    # url: "http://<host-ip>:8002/mcp"
+    url: "http://<host-ip>:8002/mcp"
+    # url: "http://mcp-atlassian-env2:8000/mcp"
     headers:
       X-Atlassian-Email: "{{ATLASSIAN_ENV2_EMAIL}}"
       X-Atlassian-Token: "{{ATLASSIAN_ENV2_TOKEN}}"
